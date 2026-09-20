@@ -11,6 +11,23 @@
 #include "GameTime.h"
 #include "GossipDef.h"
 
+class Player;
+bool Classless_DropTalentRank(Player* player, uint32 dropSpellId, uint32 keepSpellId);
+uint32 Classless_KnownTalentRank(Player* player, uint32 talentId);
+uint32 Classless_GetPetTalentTabs(Player* player, uint32* out, uint32 maxOut);
+uint32 ClasslessPet_FreePoints(Player* player);
+uint32 ClasslessPet_KnownRank(Player* player, uint32 talentId);
+bool ClasslessPet_Learn(Player* player, uint32 talentId, uint32 rank1Based);
+bool ClasslessPet_Unlearn(Player* player, uint32 talentId);
+bool ClasslessPet_Cast(Player* player, uint32 spellId);
+bool ClasslessPet_ToggleAutocast(Player* player, uint32 spellId);
+bool ClasslessPet_IsAutocastable(Player* player, uint32 spellId);
+bool ClasslessPet_IsAutocast(Player* player, uint32 spellId);
+void ClasslessPet_AutocastMaps(Player* player, std::vector<uint32>& allowed, std::vector<uint32>& enabled);
+void Classless_GetSpellTrainCost(uint32 spellId, uint32& moneyCost, uint32& currencyItemId, uint32& currencyCount);
+uint32 Classless_TryChargeSpellTrainCost(Player* player, uint32 spellId);
+void Classless_RequestSpellSave(Player* player);
+
 /***
  * Inherits all methods from: [Object], [WorldObject], [Unit]
  */
@@ -2576,6 +2593,167 @@ namespace LuaPlayer
     }
 
     /**
+     * Classless: fully drop a talent rank spell and restore the previous rank
+     * without Player:LearnSpell re-teaching the dropped rank through the chain.
+     *
+     * @param uint32 dropSpellId
+     * @param uint32 keepSpellId = 0
+     * @return bool dropped
+     */
+    int DropTalentRank(lua_State* L, Player* player)
+    {
+        uint32 dropSpellId = ALE::CHECKVAL<uint32>(L, 2);
+        uint32 keepSpellId = ALE::CHECKVAL<uint32>(L, 3, 0);
+        ALE::Push(L, ::Classless_DropTalentRank(player, dropSpellId, keepSpellId));
+        return 1;
+    }
+
+    /**
+     * Classless: highest known rank of a talent (1-based), from HasTalent or HasSpell.
+     *
+     * @param uint32 talentId
+     * @return uint32 rank
+     */
+    int GetClasslessTalentRank(lua_State* L, Player* player)
+    {
+        uint32 talentId = ALE::CHECKVAL<uint32>(L, 2);
+        ALE::Push(L, ::Classless_KnownTalentRank(player, talentId));
+        return 1;
+    }
+
+    /**
+     * Classless: TalentTab ids this hunter pet may use (Ferocity/Tenacity/Cunning).
+     *
+     * @return table tabIds
+     */
+    int GetClasslessPetTalentTabs(lua_State* L, Player* player)
+    {
+        uint32 tabs[8];
+        uint32 n = ::Classless_GetPetTalentTabs(player, tabs, 8);
+        lua_createtable(L, n, 0);
+        for (uint32 i = 0; i < n; ++i)
+        {
+            lua_pushinteger(L, tabs[i]);
+            lua_rawseti(L, -2, i + 1);
+        }
+        return 1;
+    }
+
+    int GetClasslessPetFreePoints(lua_State* L, Player* player)
+    {
+        ALE::Push(L, ::ClasslessPet_FreePoints(player));
+        return 1;
+    }
+
+    int GetClasslessPetTalentRank(lua_State* L, Player* player)
+    {
+        uint32 talentId = ALE::CHECKVAL<uint32>(L, 2);
+        ALE::Push(L, ::ClasslessPet_KnownRank(player, talentId));
+        return 1;
+    }
+
+    int ClasslessPetLearnTalent(lua_State* L, Player* player)
+    {
+        uint32 talentId = ALE::CHECKVAL<uint32>(L, 2);
+        uint32 rank = ALE::CHECKVAL<uint32>(L, 3);
+        ALE::Push(L, ::ClasslessPet_Learn(player, talentId, rank));
+        return 1;
+    }
+
+    int ClasslessPetUnlearnTalent(lua_State* L, Player* player)
+    {
+        uint32 talentId = ALE::CHECKVAL<uint32>(L, 2);
+        ALE::Push(L, ::ClasslessPet_Unlearn(player, talentId));
+        return 1;
+    }
+
+    int ClasslessPetCastSpell(lua_State* L, Player* player)
+    {
+        uint32 spellId = ALE::CHECKVAL<uint32>(L, 2);
+        ALE::Push(L, ::ClasslessPet_Cast(player, spellId));
+        return 1;
+    }
+
+    int ClasslessPetToggleAutocast(lua_State* L, Player* player)
+    {
+        uint32 spellId = ALE::CHECKVAL<uint32>(L, 2);
+        ALE::Push(L, ::ClasslessPet_ToggleAutocast(player, spellId));
+        return 1;
+    }
+
+    int GetClasslessPetAutocast(lua_State* L, Player* player)
+    {
+        uint32 spellId = ALE::CHECKVAL<uint32>(L, 2);
+        ALE::Push(L, ::ClasslessPet_IsAutocastable(player, spellId));
+        ALE::Push(L, ::ClasslessPet_IsAutocast(player, spellId));
+        return 2;
+    }
+
+    int GetClasslessPetAutocastMaps(lua_State* L, Player* player)
+    {
+        std::vector<uint32> allowed;
+        std::vector<uint32> enabled;
+        ::ClasslessPet_AutocastMaps(player, allowed, enabled);
+        lua_newtable(L);
+        for (uint32 i = 0; i < allowed.size(); ++i)
+        {
+            lua_pushboolean(L, true);
+            lua_rawseti(L, -2, allowed[i]);
+        }
+        lua_newtable(L);
+        for (uint32 i = 0; i < enabled.size(); ++i)
+        {
+            lua_pushboolean(L, true);
+            lua_rawseti(L, -2, enabled[i]);
+        }
+        return 2;
+    }
+
+    /**
+     * Classless: train cost for a spell rank (copper + optional item currency).
+     *
+     * @param uint32 spellId
+     * @return uint32 moneyCost
+     * @return uint32 currencyItemId
+     * @return uint32 currencyCount
+     */
+    int GetClasslessSpellTrainCost(lua_State* L, Player* /*player*/)
+    {
+        uint32 spellId = ALE::CHECKVAL<uint32>(L, 2);
+        uint32 moneyCost = 0;
+        uint32 currencyItemId = 0;
+        uint32 currencyCount = 0;
+        ::Classless_GetSpellTrainCost(spellId, moneyCost, currencyItemId, currencyCount);
+        ALE::Push(L, moneyCost);
+        ALE::Push(L, currencyItemId);
+        ALE::Push(L, currencyCount);
+        return 3;
+    }
+
+    /**
+     * Classless: take gold (and optional item currency) for learning a spell rank.
+     * Checks both costs before taking either. 0 = ok, 1 = not enough gold, 2 = not enough currency.
+     *
+     * @param uint32 spellId
+     * @return uint32 result
+     */
+    int ChargeClasslessSpellTrainCost(lua_State* L, Player* player)
+    {
+        uint32 spellId = ALE::CHECKVAL<uint32>(L, 2);
+        ALE::Push(L, ::Classless_TryChargeSpellTrainCost(player, spellId));
+        return 1;
+    }
+
+    /**
+     * Classless: queue spells/talents for the next additional character save (~2s).
+     */
+    int RequestSpellSave(lua_State* /*L*/, Player* player)
+    {
+        ::Classless_RequestSpellSave(player);
+        return 0;
+    }
+
+    /**
      * Clears the [Player]s combo points
      */
     int ClearComboPoints(lua_State* /*L*/, Player* player)
@@ -4723,6 +4901,24 @@ namespace LuaPlayer
     int GetRunesState(lua_State* L, Player* player)
     {
         ALE::Push(L, player->GetRunesState());
+        return 1;
+    }
+
+    /**
+     * Remaining cooldown on a rune slot, in milliseconds. 1-based slot (1..6).
+     *
+     * @param uint32 rune : 1-6
+     * @return uint32 remainingMs
+     */
+    int GetRuneCooldown(lua_State* L, Player* player)
+    {
+        uint32 rune = ALE::CHECKVAL<uint32>(L, 2);
+        if (rune < 1 || rune > 6)
+        {
+            ALE::Push(L, 0);
+            return 1;
+        }
+        ALE::Push(L, player->GetRuneCooldown(uint8(rune - 1)));
         return 1;
     }
 
