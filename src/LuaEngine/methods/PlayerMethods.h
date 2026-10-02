@@ -11,6 +11,10 @@
 #include "GameTime.h"
 #include "GossipDef.h"
 
+#ifdef MOD_PLAYERBOTS
+#include "Playerbots.h"
+#endif
+
 class Player;
 bool Classless_DropTalentRank(Player* player, uint32 dropSpellId, uint32 keepSpellId);
 uint32 Classless_KnownTalentRank(Player* player, uint32 talentId);
@@ -5360,7 +5364,8 @@ namespace LuaPlayer
     int IsBot(lua_State* L, Player* player)
     {
     #if defined(MOD_PLAYERBOTS)
-        ALE::Push(L, player->GetSession()->IsBot());
+        // WorldSession::IsBot removed in Playerbot tip; treat any attached PlayerbotAI as a bot.
+        ALE::Push(L, player && GET_PLAYERBOT_AI(player) != nullptr);
     #else
         (void)player;
         ALE::Push(L, false);
