@@ -15,7 +15,12 @@
 > **ALE** is an independent Lua scripting engine specifically designed for AzerothCore. This project has **diverged from the original Eluna project** and is no longer compatible with standard Eluna scripts. Scripts written for ALE will not work with the original Eluna engine and vice versa.
 
 > [!NOTE]
-> **Turoran classless WotLK** ([azerothcore-wotlk-classless](https://github.com/Turor/azerothcore-wotlk-classless)) must use branch **`classless-acore`**, not this repo’s `master`. `classless-acore` is stock ALE at `a9bc344` plus classless player methods (`DropTalentRank`, pet talent/autocast, spell-train gold, `GetRuneCooldown`, `RequestSpellSave`). `master` follows newer upstream ALE and does **not** compile against that older core (`OnPlayerResurrect` `bool` vs `bool&`, `ThreatManager`, `WorldPacket const&` packet hooks). The classless core gitlink records the `classless-acore` SHA. Clone the core with `--recurse-submodules`; do not `git checkout master` inside `modules/mod-ale` on that tree.
+> **Turoran classless WotLK** module pins:
+> - **`classless-playerbot`** — upstream ALE tip + classless Lua bindings (`DropTalentRank`, pet talent/autocast, spell-train gold, etc.) with modern Script signatures (`OnPlayerResurrect` `bool&`, `WorldPacket const&`, `GetThreatMgr`). Use this on the Playerbot+Classless feature branch (`feature/playerbot-classless-report`).
+> - **`classless-acore`** — older pin (`a9bc344` + bindings) for the Feb-era classless-only core (`OnPlayerResurrect` `bool`, non-const packet hooks). Do not use on Playerbot tip.
+> - **`master`** — upstream tip + classless bindings but with resurrect forced to `bool` for the old classless core; prefer `classless-playerbot` for Playerbot+Classless.
+>
+> Clone the core with `--recurse-submodules`. Do not casually `git checkout master` inside `modules/mod-ale` on a Playerbot tip tree.
 
 ## 🚀 Overview
 
