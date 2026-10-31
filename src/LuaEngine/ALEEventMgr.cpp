@@ -41,7 +41,14 @@ ALEEventProcessor::~ALEEventProcessor()
 
 void ALEEventProcessor::Update(uint32 diff)
 {
+    // Hold the engine lock for the whole update (azerothcore/mod-ale#402). Per-object processors run on
+    // map-update threads; RemoveEvent() -> luaL_unref() touches the shared lua_State and registry free list,
+    // so with MapUpdate.Threads > 1 it raced other threads' hooks (SetupStack ASSERT, Roguelike 2026-10-31).
+    // ALE::LockType is recursive, so OnTimedEvent()'s own LOCK_ALE below is fine.
     m_time += diff;
+    if (eventList.empty() || eventList.begin()->first > m_time)
+        return; // nothing due: skip the lock (Update runs for every WorldObject every tick)
+    LOCK_ALE;
     for (EventList::iterator it = eventList.begin(); it != eventList.end() && it->first <= m_time; it = eventList.begin())
     {
         LuaEvent* luaEvent = it->second;
